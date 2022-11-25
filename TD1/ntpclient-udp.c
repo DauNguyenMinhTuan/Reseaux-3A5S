@@ -1,13 +1,18 @@
+#include <stdio.h>
 #include <unistd.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netinet/udp.h>
 #include <netdb.h>
+#include <time.h>
+
+#define NTP_TIMESTAMP_DELTA 2208988800u
 
 # define SET_LI(packet, li)(uint8_t)(packet.li_vn_mode |= (li << 6))
 # define SET_VN(packet, vn)(uint8_t)(packet.li_vn_mode |= (vn << 3))
@@ -48,8 +53,13 @@ void error(char *msg){
 }
 
 int main(int argc, char **argv){
+    if(argc < 2){
+        error("Missing host name argument");
+    }
+    char *host_name = argv[1];
+
     ntp_packet packet;
-    bzero(&packet, 48);
+    bzero(&packet, sizeof(ntp_packet));
 
     SET_LI(packet, 0);
     SET_VN(packet, 3);
@@ -59,10 +69,38 @@ int main(int argc, char **argv){
     if(sockfd < 0){
         error("Socket error");
     }
-    
-    char host_name[] = "fr.pool.ntp.org";
+
     struct hostent *server;
     server = gethostbyname(host_name);
+    if(server == NULL){
+        error("Cannot get host by name");
+    }
+
+    struct sockaddr_in serv_addr;
+    bzero(&serv_addr, sizeof(struct sockaddr_in));
+
+    serv_addr.sin_family = AF_INET;
+
+    bcopy(server->h_addr, &serv_addr.sin_addr.s_addr, server->h_length);
+
+    int n0_port = 123;
+    serv_addr.sin_port = htons(n0_port);
+
+    if(connect(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0){
+        error("Connect error");
+    }
+
+    if(write(sockfd, &packet, sizeof(ntp_packet)) < 0){
+        error("Error writing to socket");
+    }
+
+    if(read(sockfd, &packet, sizeof(ntp_packet)) < 0){
+        error("Error reading from socket");
+    }
+
+    long int timestamp = ntohl(packet.txTm_s) - NTP_TIMESTAMP_DELTA;
+
+    printf("Time: %s\n", ctime(&timestamp));
 
     _exit(EXIT_SUCCESS);
 }
