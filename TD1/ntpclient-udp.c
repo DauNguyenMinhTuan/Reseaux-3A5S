@@ -14,22 +14,33 @@
 # define SET_MODE(packet, mode)(uint8_t)(packet.li_vn_mode |= (mode << 0))
 
 typedef struct{
-    uint8_t li_vn_mode;
-    uint8_t stratum; 
-    uint8_t poll; // E i g h t b i t s . Maximum i n t e r v a l b e t w e e n s u c c e s s i v e m e s s a g e s .
-    uint8_t precision; // E i g h t b i t s . P r e c i s i o n o f t h e l o c a l c l o c k .
-    uint32_t rootDelay; // 32 b i t s . T o t a l round t r i p d e l a y t i m e .
-    uint32_t rootDispersion; // 32 b i t s . Max e r r o r a l o u d f r o m p r i m a r y c l o c k s o u r c e .
-    uint32_t refId; // 32 b i t s . R e f e r e n c e c l o c k i d e n t i f i e r .
-    uint32_t refTm_s; // 32 b i t s . R e f e r e n c e t i m e −stamp s e c o n d s .
-    uint32_t refTm_f; // 32 b i t s . R e f e r e n c e t i m e −stamp f r a c t i o n o f a s e c o n d .
-    uint32_t origTm_s; // 32 b i t s . O r i g i n a t e t i m e −stamp s e c o n d s .
-    uint32_t origTm_f; // 32 b i t s . O r i g i n a t e t i m e −stamp f r a c t i o n o f a s e c o n d .
-    uint32_t rxTm_s; // 32 b i t s . R e c e i v e d t i m e −stamp s e c o n d s .
-    uint32_t rxTm_f; // 32 b i t s . R e c e i v e d t i m e −stamp f r a c t i o n o f a s e c o n d .
-    uint32_t txTm_s ; // 32 b i t s and t h e most i m p o r t a n t f i e l d t h e c l i e n t c a r e s a b o u t . T r a n s m i t t i m e −stamps e c o n d s .
-    uint32_t txTm_f; // 32 b i t s . T r a n s m i t t i m e −stamp f r a c t i o n o f a s e c o n d .
-} ntp_packet; // T o t a l : 384 b i t s o r 48 b y t e s
+
+    uint8_t li_vn_mode;      // Eight bits. li, vn, and mode.
+                             // li.   Two bits.   Leap indicator.
+                             // vn.   Three bits. Version number of the protocol.
+                             // mode. Three bits. Client will pick mode 3 for client.
+
+    uint8_t stratum;         // Eight bits. Stratum level of the local clock.
+    uint8_t poll;            // Eight bits. Maximum interval between successive messages.
+    uint8_t precision;       // Eight bits. Precision of the local clock.
+
+    uint32_t rootDelay;      // 32 bits. Total round trip delay time.
+    uint32_t rootDispersion; // 32 bits. Max error aloud from primary clock source.
+    uint32_t refId;          // 32 bits. Reference clock identifier.
+
+    uint32_t refTm_s;        // 32 bits. Reference time-stamp seconds.
+    uint32_t refTm_f;        // 32 bits. Reference time-stamp fraction of a second.
+
+    uint32_t origTm_s;       // 32 bits. Originate time-stamp seconds.
+    uint32_t origTm_f;       // 32 bits. Originate time-stamp fraction of a second.
+
+    uint32_t rxTm_s;         // 32 bits. Received time-stamp seconds.
+    uint32_t rxTm_f;         // 32 bits. Received time-stamp fraction of a second.
+
+    uint32_t txTm_s;         // 32 bits and the most important field the client cares about. Transmit time-stamp seconds.
+    uint32_t txTm_f;         // 32 bits. Transmit time-stamp fraction of a second.
+
+} ntp_packet;              // Total: 384 bits or 48 bytes.
 
 void error(char *msg){
     perror(msg);
