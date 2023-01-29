@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <ncurses.h>
 
+#include "connection_info.h"
+
 #define BUFSIZE 1024
 #define max(a, b) ((a > b) ? a : b)
 
@@ -27,13 +29,13 @@ int main(int argc, char **argv) {
 	// Global WINDOW - Done
 	// my_window = initscr();
 
-    if (argc < 3) {
-        stop("Missing server's IP or port\n");
-    }
+    // if (argc < 3) {
+    //     stop("Missing server's IP or port\n");
+    // }
 
-    char *ip_server = argv[1];
+    char *ip_server = IP_SERVER;
     // printf("%s %s\n", argv[1], argv[2]);
-    uint16_t port = (u_int16_t)atoi(argv[2]);
+    uint16_t port = PORT;
 
     int sockfd;
     char buffer[BUFSIZE];

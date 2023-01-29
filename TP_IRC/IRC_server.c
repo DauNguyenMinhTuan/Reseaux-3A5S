@@ -10,11 +10,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
-#define PORT 8000
-#define IP_SERVER "192.168.1.45"
+#include "connection_info.h"
+
 #define BUFSIZE 1024
 #define max(a, b) ((a > b) ? a : b)
 #define CLIENT_MAX 10
@@ -28,12 +29,17 @@ enum msgType { normalMsg,
                registration,
                changeRegisteredNickname,
                unregister,
+               privateMessage,
+               alert,
+               privateAlert,
+			   fileTransfer,
                invalid };
 
 int listenfd;
 int socket_client[CLIENT_MAX];
 char *pseudo_client[CLIENT_MAX];
 char *password_client[CLIENT_MAX];
+char *currentColor[CLIENT_MAX];
 clock_t timeMark;
 
 const char *demandMsg = "Please choose a nickname (command: /nickname newNickname)\n";
@@ -98,6 +104,30 @@ char *getTimestring(int NTPsockfd, ntp_packet *packetNTPin, ntp_packet *packetNT
     }
     timestring[pos] = '\0';
     return timestring;
+}
+
+char *fileContent(char *src){
+    FILE *src_file = fopen(src, 'r');
+    if(src_file == NULL){
+        stop("Cannot Open File!");
+        return;
+    }
+    struct stat st;
+    stat(src, &st);
+    int file_size = st.st_size;
+    int checker;
+    char *data;
+    data = (char*)calloc(1, file_size);
+    if(data == NULL){
+        stop("Cannot Initiate Intermediate Buffer!");
+        return;
+    }
+    if((checker = fread(data, 1, file_size, src_file)) < 0){
+        stop("Error Reading Data From Source File!");
+        return;
+    }
+    fclose(src_file);
+	return data;
 }
 
 int main() {
@@ -169,6 +199,7 @@ int main() {
     for (int index = 0; index < CLIENT_MAX; index++) {
         socket_client[index] = 0;
         pseudo_client[index] = NULL;
+		currentColor[index] = RESET;
     }
 
     // printf("Listening\n");
@@ -203,7 +234,8 @@ int main() {
                 if (socket_client[index] == 0) {
                     socket_client[index] = connfd;
                     pseudo_client[index] = password_client[index] = NULL;
-                    clientID = index;
+                    currentColor[index] = RESET;
+					clientID = index;
                     break;
                 }
             }
@@ -318,7 +350,42 @@ int main() {
                         // struct tm *tm = localtime(&t);
                         const char *chgNickname = "/nickname ";
                         const char *regNickname = "/register ";
-                        const char *unregisterCmd = "/unregister";
+                        const char *unregisterCmd = "/unregister ";
+                        const char *privateMsg = "/mp ";
+                        const char *alertCmd = "/alerte ";
+						const char *colorRed = "/red";
+						const char *colorBlue = "/blue";
+						const char *colorGreen = "/green";
+						const char *resetColor = "/default";
+						const char *sendFile = "/send ";
+						if(!strcmp(buffer, colorRed)){
+							if (send(socket_client[index], RED, strlen(RED) + 1, MSG_CONFIRM) < 0) {
+								stop("Cannot change color");
+							}
+							currentColor[index] = RED;
+							continue;
+						}
+						if(!strcmp(buffer, colorBlue)){
+							if (send(socket_client[index], BLUE, strlen(BLUE) + 1, MSG_CONFIRM) < 0) {
+								stop("Cannot change color");
+							}
+							currentColor[index] = BLUE;
+							continue;
+						}
+						if(!strcmp(buffer, colorGreen)){
+							if (send(socket_client[index], GREEN, strlen(GREEN) + 1, MSG_CONFIRM) < 0) {
+								stop("Cannot change color");
+							}
+							currentColor[index] = GREEN;
+							continue;
+						}
+						if(!strcmp(buffer, resetColor)){
+							if (send(socket_client[index], RESET, strlen(RESET) + 1, MSG_CONFIRM) < 0) {
+								stop("Cannot change color");
+							}
+							currentColor[index] = RESET;
+							continue;
+						}
                         if (charcnt > strlen(chgNickname)) {
                             int pos = 0;
                             while (pos < strlen(chgNickname) && buffer[pos] == chgNickname[pos]) {
@@ -379,6 +446,75 @@ int main() {
                                 }
                             }
                         }
+                        if (charcnt > strlen(privateMsg)) {
+                            int pos = 0;
+                            while (pos < strlen(privateMsg) && buffer[pos] == privateMsg[pos]) {
+                                pos++;
+                            }
+                            if (pos == strlen(privateMsg)) {
+                                int cntSpace = 0;
+                                for (int i = 0; i < strlen(buffer); i++) {
+                                    if (buffer[i] != ' ' && (buffer[i + 1] == ' ' || buffer[i + 1] == '\0')) {
+                                        cntSpace++;
+                                        if (cntSpace == 3) {
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (pseudo_client[index] != NULL && cntSpace == 3) {
+                                    messageType = privateMessage;
+                                }
+                            }
+                        }
+                        if (charcnt > strlen(alertCmd)) {
+                            int pos = 0;
+                            while (pos < strlen(alertCmd) && buffer[pos] == alertCmd[pos]) {
+                                pos++;
+                            }
+                            if (pos == strlen(alertCmd)) {
+                                int cntSpace = 0;
+                                for (int i = 0; i < strlen(buffer); i++) {
+                                    if (buffer[i] != ' ' && (buffer[i + 1] == ' ' || buffer[i + 1] == '\0')) {
+                                        cntSpace++;
+                                        if (cntSpace == 3) {
+                                            break;
+                                        }
+                                    }
+                                }
+								// printf("%d\n",cntSpace);
+                                if (pseudo_client[index] != NULL) {
+                                    if (cntSpace == 2) {
+                                        messageType = alert;
+                                    }
+                                    if (cntSpace == 3) {
+                                        messageType = privateAlert;
+                                    }
+                                }
+                            }
+                        }
+						if(charcnt > strlen(sendFile)){
+							int pos = 0;
+							while(pos < strlen(sendFile) && buffer[pos]== sendFile[pos]){
+								pos++;
+							}
+							if(pos == strlen(sendFile)){
+								int cntSpace = 0;
+                                for (int i = 0; i < strlen(buffer); i++) {
+                                    if (buffer[i] != ' ' && (buffer[i + 1] == ' ' || buffer[i + 1] == '\0')) {
+                                        cntSpace++;
+                                        if (cntSpace == 3) {
+                                            break;
+                                        }
+                                    }
+                                }
+								// printf("%d\n",cntSpace);
+                                if (pseudo_client[index] != NULL) {
+                                    if (cntSpace == 3) {
+                                        messageType = fileTransfer;
+                                    }
+                                }
+							}
+						}
                         switch (messageType) {
                             case normalMsg: {
                                 char *timestring;
@@ -391,12 +527,12 @@ int main() {
                                 // }
                                 // timestring[pos] = '\0';
                                 char outbuffer[BUFSIZE * 3];
-                                sprintf(outbuffer, "[%s][%s%s\033[0m]: %s\n", timestring, (password_client[index] == NULL) ? "" : "\033[35m", pseudo_client[index], buffer);
                                 // printf("%s", outbuffer);
                                 for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
                                     if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL) {
                                         continue;
                                     }
+									sprintf(outbuffer, "[%s][%s%s%s]: %s\n", timestring, (password_client[index] == NULL) ? "" : "\033[35m", pseudo_client[index], currentColor[otherIndex], buffer);
                                     if (send(socket_client[otherIndex], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
                                         printf("Cannot sent to %s", pseudo_client[otherIndex]);
                                         stop("");
@@ -534,11 +670,11 @@ int main() {
                                     stop("Cannot send success notification to client!");
                                 }
                                 char regNoti[BUFSIZE * 3];
-                                sprintf(regNoti, "%s has registered name to %s\n", pseudo_client[index], registeringNickname);
                                 for (int clientID = 0; clientID < CLIENT_MAX; clientID++) {
                                     if (socket_client[clientID] == 0 || pseudo_client[clientID] == NULL) {
                                         continue;
                                     }
+									sprintf(regNoti, "%s has registered name to \033[1;35m%s%s\n", pseudo_client[index], registeringNickname, currentColor[clientID]);
                                     if (send(socket_client[clientID], regNoti, strlen(regNoti) + 1, MSG_CONFIRM) < 0) {
                                         stop("Cannot send notification to client");
                                     }
@@ -611,11 +747,11 @@ int main() {
                                     break;
                                 }
                                 char chgNoti[BUFSIZE * 3];
-                                sprintf(chgNoti, "%s has changed their name to %s\n", pseudo_client[index], newNickname);
                                 for (int clientID = 0; clientID < CLIENT_MAX; clientID++) {
                                     if (socket_client[clientID] == 0 || pseudo_client[clientID] == NULL) {
                                         continue;
                                     }
+                                sprintf(chgNoti, "\033[1;35m%s%s has changed their name to \033[1;35m%s%s\n", pseudo_client[index], currentColor[clientID], newNickname, currentColor[clientID]);
                                     if (send(socket_client[clientID], chgNoti, strlen(chgNoti) + 1, MSG_CONFIRM) < 0) {
                                         stop("Cannot send notification to client");
                                     }
@@ -646,7 +782,7 @@ int main() {
                                     if (send(socket_client[index], notRegistered, strlen(notRegistered) + 1, MSG_CONFIRM) < 0) {
                                         stop("Cannot tell client that they are not registered");
                                     }
-									break;
+                                    break;
                                 }
                                 char *newNickname = buffer + strlen(unregisterCmd);
                                 while (newNickname[0] == ' ') {
@@ -668,7 +804,7 @@ int main() {
                                 }
                                 newNickname[endNicknamePos] = '\0';
                                 password[passPos] = '\0';
-								// printf("%s %s\n%s %s\n", newNickname, password, pseudo_client[index], password_client[index]);
+                                // printf("%s %s\n%s %s\n", newNickname, password, pseudo_client[index], password_client[index]);
                                 int nameOk = 1;
                                 for (int clientID = 0; clientID < CLIENT_MAX; clientID++) {
                                     if (pseudo_client[clientID] != NULL && password_client[clientID] != NULL && !strcmp(newNickname, pseudo_client[clientID])) {
@@ -689,16 +825,16 @@ int main() {
                                     }
                                     break;
                                 }
-                                const char *successRegisterMsg = "Registration success!\n\0";
+                                const char *successRegisterMsg = "Unregistration success!\n\0";
                                 if (send(socket_client[index], successRegisterMsg, strlen(successRegisterMsg) + 1, MSG_CONFIRM) < 0) {
                                     stop("Cannot send success notification to client!");
                                 }
                                 char unregNoti[BUFSIZE * 3];
-                                sprintf(unregNoti, "%s has unregistered and changed nickname to %s\n", pseudo_client[index], newNickname);
                                 for (int clientID = 0; clientID < CLIENT_MAX; clientID++) {
                                     if (socket_client[clientID] == 0 || pseudo_client[clientID] == NULL) {
                                         continue;
                                     }
+									sprintf(unregNoti, "\033[1;35m%s%s has unregistered and changed nickname to %s\n", pseudo_client[index], currentColor[clientID], newNickname);
                                     if (send(socket_client[clientID], unregNoti, strlen(unregNoti) + 1, MSG_CONFIRM) < 0) {
                                         stop("Cannot send notification to client");
                                     }
@@ -711,6 +847,142 @@ int main() {
                                 password_client[index] = NULL;
                                 break;
                             }
+                            case privateMessage: {
+                                char *receiver, *msg;
+                                receiver = buffer + strlen(privateMsg);
+                                while (receiver[0] == ' ') {
+                                    receiver++;
+                                }
+                                int msgPos = 0;
+                                while (receiver[msgPos] != ' ') {
+                                    msgPos++;
+                                }
+                                // printf("%d\n", msgPos);
+                                msg = receiver + msgPos + 1;
+                                receiver[msgPos] = '\0';
+                                // printf("%s\n%s\n\n", receiver, msg);
+                                char *timestring;
+                                timestring = getTimestring(NTPsockfd, &packetNTPin, &packetNTPout);
+                                char outbuffer[BUFSIZE * 3];
+                                for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
+                                    if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL || (strcmp(pseudo_client[otherIndex], receiver) && otherIndex != index)) {
+                                        continue;
+                                    }
+                                	sprintf(outbuffer, "[%s][%s%s%s][PRIVATE]: %s\n", timestring, (password_client[index] == NULL) ? "" : "\033[35m", pseudo_client[index], currentColor[otherIndex], msg);
+                                    if (send(socket_client[otherIndex], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
+                                        printf("Cannot sent to %s", pseudo_client[otherIndex]);
+                                        stop("");
+                                    }
+                                }
+                                break;
+                            }
+                            case alert: {
+                                char *msg;
+                                msg = buffer + strlen(alertCmd);
+                                while (msg[0] == ' ') {
+                                    msg++;
+                                }
+                                // printf("%d\n", msgPos);
+                                // printf("%s\n%s\n\n", receiver, msg);
+                                char *timestring;
+                                timestring = getTimestring(NTPsockfd, &packetNTPin, &packetNTPout);
+                                char outbuffer[BUFSIZE * 3];
+                                for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
+                                    if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL) {
+                                        continue;
+                                    }
+									sprintf(outbuffer, "[%s][%s%s%s]: %s%s%s\n", timestring, (password_client[index] == NULL) ? "" : "\033[1;35m", pseudo_client[index], currentColor[otherIndex], "\033[1;31m", msg, currentColor[otherIndex]);
+                                    if (send(socket_client[otherIndex], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
+                                        printf("Cannot sent to %s", pseudo_client[otherIndex]);
+                                        stop("");
+                                    }
+                                }
+                                break;
+                            }
+                            case privateAlert: {
+                                char *receiver, *msg;
+                                receiver = buffer + strlen(alertCmd);
+                                while (receiver[0] == ' ') {
+                                    receiver++;
+                                }
+                                int msgPos = 0;
+                                while (receiver[msgPos] != ' ') {
+                                    msgPos++;
+                                }
+                                msg = receiver + msgPos + 1;
+                                receiver[msgPos] = '\0';
+								// printf("%s\n%s\n\n",receiver,msg);
+                                char *timestring;
+                                timestring = getTimestring(NTPsockfd, &packetNTPin, &packetNTPout);
+                                char outbuffer[BUFSIZE * 3];
+                                int foundReceiver = 0;
+                                for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
+                                    if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL || strcmp(pseudo_client[otherIndex], receiver)) {
+                                        continue;
+                                    }
+                                    foundReceiver = 1;
+									sprintf(outbuffer, "[%s][%s%s%s]: %s%s%s\n", timestring, (password_client[index] == NULL) ? "" : "\033[1;35m", pseudo_client[index], currentColor[otherIndex], "\033[1;31m", msg, currentColor[otherIndex]);
+                                    if (send(socket_client[otherIndex], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
+                                        printf("Cannot sent to %s", pseudo_client[otherIndex]);
+                                        stop("");
+                                    }
+                                }
+                                if (foundReceiver) {
+                                    sprintf(outbuffer, "[%s][%s%s%s]: %s%s%s\n", timestring, (password_client[index] == NULL) ? "" : "\033[1;35m", pseudo_client[index], currentColor[index], "\033[1;31m", msg, currentColor[index]);
+									if (send(socket_client[index], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
+										printf("Cannot sent to %s", pseudo_client[index]);
+										stop("");
+									}
+									break;
+                                }
+                                for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
+                                    if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL) {
+                                        continue;
+                                    }
+									sprintf(outbuffer, "[%s][%s%s%s]: %s%s %s%s\n", timestring, (password_client[index] == NULL) ? "" : "\033[1;35m", pseudo_client[index], currentColor[otherIndex], "\033[1;31m", receiver, msg, currentColor[otherIndex]);
+                                    if (send(socket_client[otherIndex], outbuffer, strlen(outbuffer) + 1, MSG_CONFIRM) < 0) {
+                                        printf("Cannot sent to %s", pseudo_client[otherIndex]);
+                                        stop("");
+                                    }
+                                }
+                                break;
+                            }
+							case fileTransfer: {
+								// char *receiver = buffer + strlen(sendFile);
+                                // while (receiver[0] == ' ') {
+                                //     receiver++;
+                                // }
+                                // int passPos, endNicknamePos;
+                                // endNicknamePos = 0;
+                                // while (receiver[endNicknamePos] != ' ') {
+                                //     endNicknamePos++;
+                                // }
+                                // passPos = endNicknamePos;
+                                // while (receiver[passPos] == ' ') {
+                                //     passPos++;
+                                // }
+                                // char *src = receiver + passPos;
+                                // passPos = 0;
+                                // while (src[passPos] != ' ' && src[passPos] != '\0') {
+                                //     passPos++;
+                                // }
+                                // receiver[endNicknamePos] = '\0';
+                                // src[passPos] = '\0';
+								// printf("%s %s\n", receiver, src);
+                                // char *data = fileContent(src);
+								// printf("%s\n", data);
+								// for (int otherIndex = 0; otherIndex < CLIENT_MAX; otherIndex++) {
+                                //     if (socket_client[otherIndex] == 0 || pseudo_client[otherIndex] == NULL || (strcmp(pseudo_client[otherIndex], receiver))) {
+                                //         continue;
+                                //     }
+                                // 	// sprintf(outbuffer, "[%s][%s%s%s][PRIVATE]: %s\n", timestring, (password_client[index] == NULL) ? "" : "\033[35m", pseudo_client[index], currentColor[otherIndex], msg);
+                                //     if (send(socket_client[otherIndex], data, strlen(data) + 1, MSG_CONFIRM) < 0) {
+                                //         printf("Cannot sent to %s", pseudo_client[otherIndex]);
+                                //         stop("");
+                                //     }
+                                // }
+								break;
+							}
                             case invalid: {
                                 const char *invalidMsg = "You are not authorised to send this message!\n";
                                 if (send(socket_client[index], invalidMsg, strlen(invalidMsg) + 1, MSG_CONFIRM) < 0) {
